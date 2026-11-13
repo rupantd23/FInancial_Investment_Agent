@@ -10,6 +10,25 @@ Financial Investment Agent - a mobile-first investor intelligence prototype.
 
 The current implementation uses clearly labeled synthetic demo fixtures so the experience remains reliable while live ingestion is added. Synthetic values are not investment advice and must be replaced with retrieved primary-source data before submission.
 
+## Gemini connection
+
+The backend uses Google's `google-genai` SDK and Gemini's Interactions API. Keep these variables in `api/.env`:
+
+```env
+GEMINI_API_KEY=your-key
+GEMINI_MODEL=gemini-3.8-flash
+```
+
+Install the backend requirements, then run the local smoke test:
+
+```bash
+source api/FIAenv/bin/activate
+pip install -r api/requirements.txt
+PYTHONPATH=api python api/smoke_gemini.py
+```
+
+The smoke test uses synthetic text only. FINN's real Pull path must pass only annual-report and earnings-call transcript chunks into `api/llm.py`; the adapter rejects other source types before sending the prompt.
+
 ## Repository layout
 
 ```text
