@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { fallbackDigest, fallbackResearch, type AlertItem, type NetworkMatch } from "../lib/demo";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -9,7 +9,7 @@ type ResearchSection = {
   label: string;
   text: string;
   status: string;
-  source: { label: string; type: string; page?: string | null; provenance: string } | null;
+  source: { label: string; type: string; page?: string | null; url?: string | null; provenance: string } | null;
 };
 
 type Research = {
@@ -20,6 +20,8 @@ type Research = {
   headline: string;
   sections: ResearchSection[];
   network: NetworkMatch[];
+  provenance?: string;
+  model?: string;
 };
 
 type NewsArticle = {
@@ -63,12 +65,12 @@ export default function Home() {
       const result = await response.json();
       setResearch(result);
       setActive("research");
-      setNotice(result.available ? "Research loaded from the prototype API." : "No source fixture is available for this ticker.");
+      setNotice(result.available ? "Research loaded from Supabase and Gemini." : "No primary-source documents are available for this ticker.");
     } catch {
       const result = fallbackResearch[normalized as keyof typeof fallbackResearch];
       if (result) {
         setResearch(result);
-        setNotice("Loaded from a local cached fixture because the API is not running.");
+      setNotice("API unavailable — showing a local cached fixture. Start the backend and press Research again.");
       } else {
         setResearch({ ticker: normalized, company: null, available: false, disclosure: "No annual-report or earnings-call transcript fixture is available for this ticker.", headline: "Evidence unavailable", sections: [], network: [] });
         setNotice("No source fixture is available for this ticker.");
@@ -76,6 +78,10 @@ export default function Home() {
       setActive("research");
     }
   }
+
+  useEffect(() => {
+    void loadResearch();
+  }, []);
 
   async function searchNetwork() {
     const normalized = ticker.trim().toUpperCase().replace(".NS", "").replace(".BO", "") || "TCS";
@@ -152,7 +158,8 @@ function NetworkRow({ person }: { person: NetworkMatch }) {
 }
 
 function ResearchView({ ticker, setTicker, research, loadResearch, onNetwork }: { ticker: string; setTicker: (value: string) => void; research: Research; loadResearch: () => void; onNetwork: (matches: NetworkMatch[]) => void }) {
-  return <section className="research-view"><div className="research-header"><div><p className="section-kicker">PULL · PRIMARY-SOURCE RESEARCH</p><h2>Understand a company</h2><p className="muted">Annual reports and earnings-call transcripts only.</p></div><div className="ticker-search"><input value={ticker} onChange={(event) => setTicker(event.target.value)} onKeyDown={(event) => event.key === "Enter" && loadResearch()} placeholder="NSE ticker" aria-label="NSE ticker" /><button onClick={loadResearch}>Research</button></div></div>{research.available ? <><div className="research-title"><div><span className="ticker-badge">{research.ticker}</span><h2>{research.company}</h2></div><span className="provenance">Synthetic demo</span></div><div className="disclosure"><span>ⓘ</span>{research.disclosure}</div><div className="research-grid">{research.sections.map((section) => <article className="research-card" key={section.label}><div className="card-topline"><span className="section-kicker">{section.label}</span><span className={`status-label ${section.status.toLowerCase().replace(" ", "-")}`}>{section.status}</span></div><p>{section.text}</p>{section.source ? <div className="citation">↗ {section.source.label} · {section.source.page}</div> : <div className="citation missing">No supporting evidence loaded</div>}</article>)}</div><div className="research-network"><div><p className="section-kicker">NETWORK CONTEXT</p><h3>Who can help me understand {research.ticker}?</h3><p className="muted">Matches are ranked from explicit synthetic profile evidence.</p></div><div className="research-network-list">{research.network.map((person) => <NetworkRow key={person.name} person={person} />)}</div><button className="outline-button" onClick={() => onNetwork(research.network)}>Open network view →</button></div></> : <div className="empty-state"><span className="empty-icon">⌕</span><h3>Evidence unavailable</h3><p>{research.disclosure}</p><p>Try TCS, RELIANCE, or INFY for the seeded prototype examples.</p></div>}</section>;
+  const isLive = research.provenance?.startsWith("Gemini interpretation");
+  return <section className="research-view"><div className="research-header"><div><p className="section-kicker">PULL · PRIMARY-SOURCE RESEARCH</p><h2>Understand a company</h2><p className="muted">Annual reports and earnings-call transcripts only.</p></div><div className="ticker-search"><input value={ticker} onChange={(event) => setTicker(event.target.value)} onKeyDown={(event) => event.key === "Enter" && loadResearch()} placeholder="NSE ticker" aria-label="NSE ticker" /><button onClick={loadResearch}>Research</button></div></div>{research.available ? <><div className="research-title"><div><span className="ticker-badge">{research.ticker}</span><h2>{research.company}</h2></div><span className="provenance">{isLive ? "LIVE · SUPABASE + GEMINI" : "SYNTHETIC DEMO"}</span></div><div className="disclosure"><span>ⓘ</span>{research.disclosure}</div><div className="research-grid">{research.sections.map((section) => <article className="research-card" key={section.label}><div className="card-topline"><span className="section-kicker">{section.label}</span><span className={`status-label ${section.status.toLowerCase().replace(" ", "-")}`}>{section.status}</span></div><p>{section.text}</p>{section.source ? section.source.url ? <a className="citation" href={section.source.url} target="_blank" rel="noreferrer">↗ {section.source.label} · {section.source.page}</a> : <div className="citation">↗ {section.source.label} · {section.source.page}</div> : <div className="citation missing">No supporting evidence loaded</div>}</article>)}</div><div className="research-network"><div><p className="section-kicker">NETWORK CONTEXT</p><h3>Who can help me understand {research.ticker}?</h3><p className="muted">Matches are ranked from explicit synthetic profile evidence.</p></div><div className="research-network-list">{research.network.map((person) => <NetworkRow key={person.name} person={person} />)}</div><button className="outline-button" onClick={() => onNetwork(research.network)}>Open network view →</button></div></> : <div className="empty-state"><span className="empty-icon">⌕</span><h3>Evidence unavailable</h3><p>{research.disclosure}</p><p>Try another tracked company with an ingested annual report.</p></div>}</section>;
 }
 
 function NetworkView({ ticker, setTicker, query, setQuery, matches, search }: { ticker: string; setTicker: (value: string) => void; query: string; setQuery: (value: string) => void; matches: NetworkMatch[]; search: () => void }) {
