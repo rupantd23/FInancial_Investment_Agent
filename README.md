@@ -29,6 +29,19 @@ PYTHONPATH=api python api/smoke_gemini.py
 
 The smoke test uses synthetic text only. FINN's real Pull path must pass only annual-report and earnings-call transcript chunks into `api/llm.py`; the adapter rejects other source types before sending the prompt.
 
+## Supabase connection and seed
+
+After running `supabase/schema.sql` in the Supabase SQL Editor and installing the Python client, check the connection:
+
+```bash
+cd api
+source FIAenv/bin/activate
+PYTHONPATH=. python check_supabase.py
+PYTHONPATH=. python seed_supabase.py
+```
+
+The seed command uses the service-role key from `api/.env` only on the backend. It inserts the 15 portfolio companies and never prints credentials.
+
 ## Repository layout
 
 ```text
