@@ -12,3 +12,4 @@ __pycache__/
 FIAenv/
 .DS_Store
 .pytest_cache/
+data/sources/*.pdf

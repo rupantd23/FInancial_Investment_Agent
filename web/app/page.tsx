@@ -22,10 +22,22 @@ type Research = {
   network: NetworkMatch[];
 };
 
+type NewsArticle = {
+  id?: string | null;
+  title: string;
+  description?: string | null;
+  url?: string | null;
+  publishedAt?: string | null;
+  source?: { name?: string | null; url?: string | null; country?: string | null };
+  provenance: string;
+  useInPull: boolean;
+};
+
 const navItems = [
   { id: "today", label: "Today", icon: "◒" },
   { id: "research", label: "Research", icon: "⌕" },
   { id: "network", label: "Network", icon: "⌁" },
+  { id: "news", label: "News", icon: "✦" },
 ];
 
 export default function Home() {
@@ -36,6 +48,8 @@ export default function Home() {
   const [research, setResearch] = useState<Research>(fallbackResearch.TCS);
   const [networkQuery, setNetworkQuery] = useState("");
   const [searchedNetwork, setSearchedNetwork] = useState<NetworkMatch[]>(fallbackResearch.TCS.network);
+  const [newsArticles, setNewsArticles] = useState<NewsArticle[]>([]);
+  const [newsQuery, setNewsQuery] = useState("Tata Consultancy Services");
   const [notice, setNotice] = useState("Demo data loaded — provenance is shown on every card.");
 
   const highPriorityCount = useMemo(() => alerts.filter((item) => item.priority === "High").length, [alerts]);
@@ -77,6 +91,20 @@ export default function Home() {
     }
   }
 
+  async function loadNews() {
+    const params = new URLSearchParams({ query: newsQuery.trim() || "Tata Consultancy Services", max_results: "10" });
+    try {
+      const response = await fetch(`${API_BASE}/news?${params.toString()}`);
+      if (!response.ok) throw new Error("News unavailable");
+      const result = await response.json();
+      setNewsArticles(result.articles ?? []);
+      setNotice(result.notice ?? "News loaded from GNews.");
+    } catch {
+      setNewsArticles([]);
+      setNotice("News is unavailable. Check the backend and GNEWS_API_KEY.");
+    }
+  }
+
   function adjustThreshold() {
     setAlerts((current) => current.map((item) => item.id === "ann-002" ? { ...item, metric: { ...item.metric, value: item.metric.value === "2.4×" ? "3.0×" : "2.4×" } } : item));
     setNotice("Unusual-volume threshold updated for this demo session.");
@@ -94,13 +122,14 @@ export default function Home() {
       </aside>
 
       <section className="content">
-        <header className="topbar"><div><div className="eyebrow">THURSDAY, 13 NOVEMBER 2026</div><h1>{active === "today" ? "Good morning, Analyst" : active === "research" ? "Research desk" : "Your network"}</h1></div><button className="icon-button" aria-label="Notifications">♧<span className="notification-dot" /></button></header>
+        <header className="topbar"><div><div className="eyebrow">SATURDAY, 14 NOVEMBER 2026</div><h1>{active === "today" ? "Good morning, Analyst" : active === "research" ? "Research desk" : active === "network" ? "Your network" : "News context"}</h1></div><button className="icon-button" aria-label="Notifications">♧<span className="notification-dot" /></button></header>
         <div className="mobile-nav">{navItems.map((item) => <button key={item.id} className={active === item.id ? "active" : ""} onClick={() => setActive(item.id)}><span>{item.icon}</span>{item.label}</button>)}</div>
         <div className="notice"><span>✦</span>{notice}</div>
 
         {active === "today" && <Today alerts={alerts} highPriorityCount={highPriorityCount} selectedAlert={selectedAlert} setSelectedAlert={setSelectedAlert} adjustThreshold={adjustThreshold} onResearch={(value) => { setTicker(value); loadResearch(); }} />}
         {active === "research" && <ResearchView ticker={ticker} setTicker={setTicker} research={research} loadResearch={loadResearch} onNetwork={(matches) => { setSearchedNetwork(matches); setActive("network"); }} />}
         {active === "network" && <NetworkView ticker={ticker} setTicker={setTicker} query={networkQuery} setQuery={setNetworkQuery} matches={searchedNetwork} search={searchNetwork} />}
+        {active === "news" && <NewsView query={newsQuery} setQuery={setNewsQuery} articles={newsArticles} search={loadNews} />}
       </section>
     </main>
   );
@@ -128,4 +157,8 @@ function ResearchView({ ticker, setTicker, research, loadResearch, onNetwork }: 
 
 function NetworkView({ ticker, setTicker, query, setQuery, matches, search }: { ticker: string; setTicker: (value: string) => void; query: string; setQuery: (value: string) => void; matches: NetworkMatch[]; search: () => void }) {
   return <section className="network-view"><div className="research-header"><div><p className="section-kicker">NETWORK · CONTEXTUAL ADVANTAGE</p><h2>Who should I call?</h2><p className="muted">Relevant context, with the evidence shown alongside the suggestion.</p></div></div><div className="network-search"><div><label>Company or ticker</label><input value={ticker} onChange={(event) => setTicker(event.target.value)} placeholder="TCS" /></div><div><label>What do you need to understand?</label><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="e.g. delivery economics" /></div><button className="primary-button" onClick={search}>Find context <span>→</span></button></div><div className="network-result-heading"><div><p className="section-kicker">MATCHES FOR {ticker.toUpperCase()}</p><h3>People who may help</h3></div><span className="provenance">Synthetic profiles</span></div><div className="network-results">{matches.length ? matches.map((person) => <article className="large-network-card" key={person.name}><span className="avatar person-avatar large">{person.name.split(" ").map((part) => part[0]).join("")}</span><div className="large-network-copy"><div className="card-topline"><span className="tag">{person.evidence}</span><strong>{person.score}% relevance</strong></div><h3>{person.name}</h3><p>{person.role}</p><div className="reason-box"><strong>Why this match</strong><span>{person.reason}</span></div><small>{person.caveat}</small></div></article>) : <div className="empty-state small"><h3>No relevant match found</h3><p>Try a seeded company such as TCS, RELIANCE, or INFY.</p></div>}</div></section>;
+}
+
+function NewsView({ query, setQuery, articles, search }: { query: string; setQuery: (value: string) => void; articles: NewsArticle[]; search: () => void }) {
+  return <section className="news-view"><div className="research-header"><div><p className="section-kicker">NEWS · CONTEXT ONLY</p><h2>What is being said?</h2><p className="muted">GNews articles help you monitor context. They are never used as evidence for Pull analysis.</p></div></div><div className="news-search"><input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === "Enter" && search()} placeholder="Company, sector, or theme" aria-label="News search" /><button className="primary-button" onClick={search}>Search news <span>→</span></button></div>{articles.length ? <div className="news-list">{articles.map((article) => <article className="news-card" key={article.id ?? article.url ?? article.title}><div className="card-topline"><span className="tag">{article.source?.name ?? "News source"}</span><span className="provenance">{article.provenance}</span></div><h3>{article.title}</h3>{article.description && <p>{article.description}</p>}<div className="news-foot"><span>{article.publishedAt ? new Date(article.publishedAt).toLocaleString() : "Publication time unavailable"}</span>{article.url && <a href={article.url} target="_blank" rel="noreferrer">Open source ↗</a>}</div></article>)}</div> : <div className="empty-state"><span className="empty-icon">✦</span><h3>Search for context</h3><p>Enter a company or theme, then search GNews through the backend.</p><p className="muted">The API key stays server-side; news is excluded from Pull.</p></div>}</section>;
 }

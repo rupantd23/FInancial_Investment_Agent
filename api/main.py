@@ -7,6 +7,7 @@ from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from research_service import get_live_research
+from news import GNewsNotConfigured, search_news
 
 
 app = FastAPI(title="FINN API", version="0.1.0")
@@ -228,3 +229,22 @@ def network_matches(
 @app.get("/companies")
 def companies() -> dict[str, Any]:
     return {"companies": PORTFOLIO}
+
+
+@app.get("/news")
+def news(
+    ticker: str | None = Query(default=None),
+    query: str | None = Query(default=None),
+    max_results: int = Query(default=10, ge=1, le=10),
+) -> dict[str, Any]:
+    normalized = ticker.upper().replace(".NS", "").replace(".BO", "") if ticker else None
+    company = next((item for item in PORTFOLIO if item["ticker"] == normalized), None)
+    search_query = query or (company["name"] if company else None)
+    if not search_query:
+        return {"query": None, "totalArticles": 0, "articles": [], "provenance": "GNews API", "useInPull": False, "notice": "Provide ticker or query."}
+    try:
+        result = search_news(search_query, max_results=max_results)
+        result["ticker"] = normalized
+        return result
+    except GNewsNotConfigured:
+        return {"query": search_query, "totalArticles": 0, "articles": [], "provenance": "GNews API", "useInPull": False, "notice": "GNEWS_API_KEY is not configured in the backend."}

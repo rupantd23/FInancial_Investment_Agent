@@ -42,6 +42,10 @@ PYTHONPATH=. python seed_supabase.py
 
 The seed command uses the service-role key from `api/.env` only on the backend. It inserts the 15 portfolio companies and never prints credentials.
 
+## Local source PDFs
+
+Store downloaded primary-source PDFs in `data/sources/`. PDFs are ignored by Git so they remain available locally but are not pushed to the public repository. The ingestion command uploads them to the private Supabase Storage bucket and stores page-aware chunks.
+
 Create a private Supabase Storage bucket named `source-documents`. Then ingest a public annual report or transcript that you have legitimately downloaded:
 
 ```bash
@@ -53,6 +57,10 @@ PYTHONPATH=. python ingest_documents.py \
 ```
 
 After ingestion, `GET /research/TCS` retrieves only annual-report and earnings-call transcript chunks from Supabase and sends those chunks to Gemini. Use `GET /research/TCS?demo=true` only when you intentionally want the synthetic demo response.
+
+## GNews contextual news
+
+Add `GNEWS_API_KEY` to `api/.env`. The backend exposes `GET /news?ticker=TCS` and the frontend has a News view. News is labeled as contextual and explicitly excluded from Pull analysis. The API key stays in FastAPI; it is never sent to the browser.
 
 ## Repository layout
 
