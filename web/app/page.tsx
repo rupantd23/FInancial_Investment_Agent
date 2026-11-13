@@ -5,7 +5,22 @@ import { fallbackDigest, fallbackResearch, type AlertItem, type NetworkMatch } f
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
-type Research = (typeof fallbackResearch)[keyof typeof fallbackResearch];
+type ResearchSection = {
+  label: string;
+  text: string;
+  status: string;
+  source: { label: string; type: string; page?: string | null; provenance: string } | null;
+};
+
+type Research = {
+  ticker: string;
+  company: string | null;
+  available: boolean;
+  disclosure: string;
+  headline: string;
+  sections: ResearchSection[];
+  network: NetworkMatch[];
+};
 
 const navItems = [
   { id: "today", label: "Today", icon: "◒" },
@@ -41,7 +56,7 @@ export default function Home() {
         setResearch(result);
         setNotice("Loaded from a local cached fixture because the API is not running.");
       } else {
-        setResearch({ ticker: normalized, company: null, available: false, disclosure: "No annual-report or earnings-call transcript fixture is available for this ticker.", headline: "Evidence unavailable", sections: [], network: [] } as Research);
+        setResearch({ ticker: normalized, company: null, available: false, disclosure: "No annual-report or earnings-call transcript fixture is available for this ticker.", headline: "Evidence unavailable", sections: [], network: [] });
         setNotice("No source fixture is available for this ticker.");
       }
       setActive("research");
