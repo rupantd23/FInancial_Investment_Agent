@@ -5,11 +5,29 @@ import { fallbackDigest, fallbackResearch, type AlertItem, type NetworkMatch } f
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
+type ResearchMetric = {
+  label: string;
+  value: string;
+  trend?: string;
+};
+
+type ResearchSource = {
+  label: string;
+  type: string;
+  page?: string | null;
+  url?: string | null;
+  provenance: string;
+};
+
 type ResearchSection = {
   label: string;
   text: string;
   status: string;
-  source: { label: string; type: string; page?: string | null; url?: string | null; provenance: string } | null;
+  variant?: "summary" | "insight" | "evidence" | "case" | "missing";
+  tone?: "bull" | "bear";
+  metrics?: ResearchMetric[];
+  source: ResearchSource | null;
+  sources?: ResearchSource[];
 };
 
 type Research = {
@@ -157,9 +175,45 @@ function NetworkRow({ person }: { person: NetworkMatch }) {
   return <div className="network-row"><span className="avatar person-avatar">{person.name.split(" ").map((part) => part[0]).join("")}</span><span className="network-copy"><strong>{person.name}</strong><small>{person.role}</small><em>{person.evidence} · {person.score}% relevance</em></span><span className="row-arrow">›</span></div>;
 }
 
+const REQUIRED_INSIGHTS = [
+  { label: "Business snapshot", aliases: ["business snapshot"] },
+  { label: "Financial snapshot", aliases: ["financial snapshot", "financial trajectory"] },
+  { label: "Trajectory", aliases: ["trajectory"] },
+  { label: "Balance sheet", aliases: ["balance sheet"] },
+  { label: "Cash quality", aliases: ["cash quality"] },
+  { label: "Narrative vs. numbers", aliases: ["narrative vs. numbers", "narrative vs numbers"] },
+  { label: "Guidance", aliases: ["guidance"] },
+];
+
+function ResearchCitations({ section }: { section: ResearchSection }) {
+  const sources = section.sources?.length ? section.sources : section.source ? [section.source] : [];
+  if (sources.length) {
+    return <div className="citation-list">{sources.slice(0, 3).map((source, index) => source.url ? <a className="citation" href={source.url} target="_blank" rel="noreferrer" key={`${source.label}-${index}`}>↗ {source.label} · {source.page ?? "source"}</a> : <div className="citation" key={`${source.label}-${index}`}>↗ {source.label} · {source.page ?? "source"}</div>)}</div>;
+  }
+  if (section.status === "Interpreted") return <div className="citation derived">✦ Derived from the cited primary-source evidence</div>;
+  return <div className="citation missing">No supporting evidence loaded</div>;
+}
+
+function ResearchCard({ section }: { section: ResearchSection }) {
+  return <article className={`research-card ${section.variant ?? "insight"}`}><div className="card-topline"><span className="section-kicker">{section.label}</span><span className={`status-label ${section.status.toLowerCase().replace(" ", "-")}`}>{section.status}</span></div><p>{section.text}</p>{section.metrics?.length ? <div className="metric-strip">{section.metrics.slice(0, 4).map((metric) => <div className={`research-metric ${metric.trend ?? "neutral"}`} key={`${metric.label}-${metric.value}`}><small>{metric.label}</small><strong>{metric.value}</strong><em>{metric.trend && metric.trend !== "neutral" ? metric.trend : "reported"}</em></div>)}</div> : null}<ResearchCitations section={section} /></article>;
+}
+
+function CaseCard({ section }: { section: ResearchSection }) {
+  return <article className={`case-card ${section.tone ?? "bull"}`}><div className="case-card-head"><span className="case-marker">{section.tone === "bear" ? "↓" : "↑"}</span><div><p className="section-kicker">{section.label}</p><span className="case-caption">Scenario interpretation</span></div></div><p>{section.text}</p><ResearchCitations section={section} /></article>;
+}
+
 function ResearchView({ ticker, setTicker, research, loadResearch, onNetwork }: { ticker: string; setTicker: (value: string) => void; research: Research; loadResearch: () => void; onNetwork: (matches: NetworkMatch[]) => void }) {
   const isLive = research.provenance?.startsWith("Gemini interpretation");
-  return <section className="research-view"><div className="research-header"><div><p className="section-kicker">PULL · PRIMARY-SOURCE RESEARCH</p><h2>Understand a company</h2><p className="muted">Annual reports and earnings-call transcripts only.</p></div><div className="ticker-search"><input value={ticker} onChange={(event) => setTicker(event.target.value)} onKeyDown={(event) => event.key === "Enter" && loadResearch()} placeholder="NSE ticker" aria-label="NSE ticker" /><button onClick={loadResearch}>Research</button></div></div>{research.available ? <><div className="research-title"><div><span className="ticker-badge">{research.ticker}</span><h2>{research.company}</h2></div><span className="provenance">{isLive ? "LIVE · SUPABASE + GEMINI" : "SYNTHETIC DEMO"}</span></div><div className="disclosure"><span>ⓘ</span>{research.disclosure}</div><div className="research-grid">{research.sections.map((section) => <article className="research-card" key={section.label}><div className="card-topline"><span className="section-kicker">{section.label}</span><span className={`status-label ${section.status.toLowerCase().replace(" ", "-")}`}>{section.status}</span></div><p>{section.text}</p>{section.source ? section.source.url ? <a className="citation" href={section.source.url} target="_blank" rel="noreferrer">↗ {section.source.label} · {section.source.page}</a> : <div className="citation">↗ {section.source.label} · {section.source.page}</div> : <div className="citation missing">No supporting evidence loaded</div>}</article>)}</div><div className="research-network"><div><p className="section-kicker">NETWORK CONTEXT</p><h3>Who can help me understand {research.ticker}?</h3><p className="muted">Matches are ranked from explicit synthetic profile evidence.</p></div><div className="research-network-list">{research.network.map((person) => <NetworkRow key={person.name} person={person} />)}</div><button className="outline-button" onClick={() => onNetwork(research.network)}>Open network view →</button></div></> : <div className="empty-state"><span className="empty-icon">⌕</span><h3>Evidence unavailable</h3><p>{research.disclosure}</p><p>Try another tracked company with an ingested annual report.</p></div>}</section>;
+  const summary = research.sections.find((section) => section.variant === "summary" || section.label.toLowerCase() === "research summary") ?? { label: "Research summary", text: research.headline, status: "Interpreted", source: null, variant: "summary" as const };
+  const rawInsights = research.sections.filter((section) => section.variant === "insight" || (!section.variant && !section.label.toLowerCase().includes("evidence") && !section.label.toLowerCase().includes("bull")));
+  const insights = REQUIRED_INSIGHTS.map((required) => rawInsights.find((section) => required.aliases.includes(section.label.toLowerCase())) ?? { label: required.label, text: "No verified evidence is available in the supplied primary-source documents.", status: "Unavailable", source: null, sources: [], variant: "insight" as const });
+  const evidence = research.sections.filter((section) => section.variant === "evidence" || (!section.variant && section.label.toLowerCase().includes("evidence")));
+  let cases = research.sections.filter((section) => section.variant === "case");
+  const legacyCase = research.sections.find((section) => section.label.toLowerCase().includes("bull / bear"));
+  if (!cases.length && legacyCase) cases = [{ ...legacyCase, label: "Bull case", tone: "bull", variant: "case" }, { ...legacyCase, label: "Bear case", tone: "bear", variant: "case" }];
+  const missing = research.sections.filter((section) => section.variant === "missing");
+
+  return <section className="research-view"><div className="research-header"><div><p className="section-kicker">PULL · PRIMARY-SOURCE RESEARCH</p><h2>Understand a company</h2><p className="muted">Annual reports and earnings-call transcripts only. News remains contextual and is excluded from this view.</p></div><div className="ticker-search"><input value={ticker} onChange={(event) => setTicker(event.target.value)} onKeyDown={(event) => event.key === "Enter" && loadResearch()} placeholder="NSE ticker" aria-label="NSE ticker" /><button onClick={loadResearch}>Research</button></div></div>{research.available ? <><div className="research-title"><div><span className="ticker-badge">{research.ticker}</span><h2>{research.company}</h2></div><span className="provenance">{isLive ? "LIVE · SUPABASE + GEMINI" : "SYNTHETIC DEMO"}</span></div><div className="disclosure"><span>ⓘ</span>{research.disclosure}</div><div className="research-overview"><article className="summary-card"><div className="summary-card-top"><div><p className="section-kicker">RESEARCH SUMMARY</p><h3>What matters first</h3></div><span className="summary-icon">✦</span></div><p>{summary.text}</p><ResearchCitations section={summary} /></article><aside className="reading-card"><p className="section-kicker">HOW TO READ THIS VIEW</p><h3>Facts first. Interpretation second.</h3><div className="reading-row"><span className="reading-dot fact" /><span><strong>Evidence</strong><small>Directly tied to a report or transcript page.</small></span></div><div className="reading-row"><span className="reading-dot interpretation" /><span><strong>Interpreted</strong><small>Gemini synthesis of the cited primary-source excerpts.</small></span></div><div className="reading-row"><span className="reading-dot missing" /><span><strong>Unavailable</strong><small>Not supported by the documents loaded for this company.</small></span></div></aside></div><div className="research-subheading"><div><p className="section-kicker">THE RESEARCH MAP</p><h3>Eight ways to understand the company</h3></div><span className="muted">Primary-source view</span></div><div className="research-grid insight-grid">{insights.map((section) => <ResearchCard section={section} key={section.label} />)}</div>{cases.length ? <><div className="research-subheading case-heading"><div><p className="section-kicker">SCENARIO FRAME</p><h3>Bull versus bear</h3></div><span className="muted">Interpretation, not a recommendation</span></div><div className="case-grid">{cases.map((section) => <CaseCard section={section} key={`${section.label}-${section.tone}`} />)}</div></> : null}{evidence.length ? <><div className="research-subheading evidence-heading"><div><p className="section-kicker">SOURCE TRAIL</p><h3>Evidence cards</h3></div><span className="muted">Claims tied to retrieved pages</span></div><div className="evidence-grid">{evidence.map((section) => <ResearchCard section={section} key={section.label} />)}</div></> : null}{missing.length ? <div className="missing-evidence"><div><p className="section-kicker">OPEN QUESTIONS</p><h3>What the documents do not establish</h3></div>{missing.map((section) => <div className="missing-item" key={section.label}><strong>{section.label}</strong><span>{section.text}</span></div>)}</div> : null}<div className="research-network"><div><p className="section-kicker">NETWORK CONTEXT</p><h3>Who can help me understand {research.ticker}?</h3><p className="muted">Matches are ranked from explicit synthetic profile evidence.</p></div><div className="research-network-list">{research.network.map((person) => <NetworkRow key={person.name} person={person} />)}</div><button className="outline-button" onClick={() => onNetwork(research.network)}>Open network view →</button></div></> : <div className="empty-state"><span className="empty-icon">⌕</span><h3>Evidence unavailable</h3><p>{research.disclosure}</p><p>Try another tracked company with an ingested annual report.</p></div>}</section>;
 }
 
 function NetworkView({ ticker, setTicker, query, setQuery, matches, search }: { ticker: string; setTicker: (value: string) => void; query: string; setQuery: (value: string) => void; matches: NetworkMatch[]; search: () => void }) {

@@ -26,26 +26,60 @@ class ResearchClaim(BaseModel):
     page: int | None = None
 
 
+class ResearchMetric(BaseModel):
+    label: str
+    value: str
+    trend: str = Field(default="neutral", description="up, down, flat, or neutral")
+
+
+class ResearchSourceRef(BaseModel):
+    source_id: str
+    page: int | None = None
+
+
+class ResearchInsight(BaseModel):
+    text: str
+    status: str = Field(description="verified, calculated, interpreted, or unavailable")
+    source_id: str | None = None
+    page: int | None = None
+    metrics: list[ResearchMetric] = Field(default_factory=list)
+
+
+class ResearchCase(BaseModel):
+    text: str
+    sources: list[ResearchSourceRef] = Field(default_factory=list)
+
+
 class ResearchOutput(BaseModel):
     summary: str
+    summary_sources: list[ResearchSourceRef] = Field(default_factory=list)
+    business_snapshot: ResearchInsight
+    financial_snapshot: ResearchInsight
+    trajectory: ResearchInsight
+    balance_sheet: ResearchInsight
+    cash_quality: ResearchInsight
+    narrative_vs_numbers: ResearchInsight
+    guidance: ResearchInsight
     claims: list[ResearchClaim]
     missing_evidence: list[str]
-    bull_case: str
-    bear_case: str
+    bull_case: ResearchCase
+    bear_case: ResearchCase
 
 
 SYSTEM_INSTRUCTION = """You are FINN's evidence-grounded public-markets research assistant.
 
 Use only the supplied annual-report and earnings-call transcript excerpts.
 Do not use general knowledge, news, broker notes, or unstated assumptions.
-If the supplied excerpts do not support a requested fact, put it in
-missing_evidence and use status=unavailable. Never invent financial figures,
-guidance, biographies, or relationships. Financial arithmetic is performed by
-the application, not by you. Every claim must include the source_id and page
-when evidence exists. Interpretations must be labeled interpreted. Return only
-valid JSON matching the supplied schema. Keep the response compact: use at
-most 4 claims, keep each claim under 35 words, keep the summary under 60 words,
-and keep each bull/bear case under 45 words.
+If the supplied excerpts do not support a requested fact, use status=unavailable,
+leave its source fields empty, and add the topic to missing_evidence. Never invent
+financial figures, guidance, biographies, or relationships. Financial arithmetic
+is performed by the application, not by you. Every supported insight, claim, and
+case must include source_id and page references when evidence exists. Use metrics
+only for figures explicitly present in the supplied excerpts; preserve the source
+wording and units. Interpretations must be labeled interpreted. Return only valid
+JSON matching the supplied schema. Keep the response compact: use at most 4
+claims, keep each claim under 35 words, keep each insight under 45 words, keep
+the summary under 60 words, and keep each bull/bear case under 45 words.
 """
 
 
@@ -73,10 +107,16 @@ def build_research_prompt(ticker: str, chunks: list[dict[str, Any]]) -> str:
     evidence_text = "\n\n".join(evidence) or "NO PERMITTED EVIDENCE WAS RETRIEVED."
     return f"""Research ticker: {ticker.upper()}
 
-Produce a compact research brief with a summary, evidence-backed claims,
-missing evidence, and a bull and bear case. Return at most 4 claims. Keep every
-field concise so the complete JSON response fits within the output limit. Do
-not include markdown or commentary outside the JSON.
+Produce a compact research brief with a summary, exactly seven typed insights,
+evidence-backed claims, missing evidence, and a bull and bear case. The seven
+insights must cover these keys: business_snapshot, financial_snapshot, trajectory,
+balance_sheet, cash_quality, narrative_vs_numbers, and guidance. Use a maximum
+of four metrics in financial_snapshot and trajectory, and only include metrics
+that are explicit in the retrieved evidence. For narrative_vs_numbers, compare
+management commentary with reported numbers only when both are present. For
+guidance, report only explicit management guidance. Return at most 4 claims.
+Keep every field concise so the complete JSON response fits within the output
+limit. Do not include markdown or commentary outside the JSON.
 
 Retrieved primary-source evidence:
 {evidence_text}

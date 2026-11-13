@@ -34,6 +34,26 @@ def _source_for_claim(claim: dict[str, Any], source_index: dict[str, dict[str, A
     }
 
 
+def _sources_for_refs(refs: list[dict[str, Any]] | None, source_index: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    for ref in refs or []:
+        source = _source_for_claim(ref, source_index)
+        if source and source not in sources:
+            sources.append(source)
+    return sources
+
+
+INSIGHT_LABELS = (
+    ("business_snapshot", "Business snapshot"),
+    ("financial_snapshot", "Financial snapshot"),
+    ("trajectory", "Trajectory"),
+    ("balance_sheet", "Balance sheet"),
+    ("cash_quality", "Cash quality"),
+    ("narrative_vs_numbers", "Narrative vs. numbers"),
+    ("guidance", "Guidance"),
+)
+
+
 def _to_ui_research(
     ticker: str,
     company: dict[str, Any],
@@ -41,37 +61,68 @@ def _to_ui_research(
     source_index: dict[str, dict[str, Any]],
     document_count: int,
 ) -> dict[str, Any]:
-    sections: list[dict[str, Any]] = [
-        {
-            "label": "Research summary",
-            "text": output["summary"],
-            "status": "Interpreted",
-            "source": None,
-        }
-    ]
+    summary_sources = _sources_for_refs(output.get("summary_sources"), source_index)
+    sections: list[dict[str, Any]] = [{
+        "label": "Research summary",
+        "text": output["summary"],
+        "status": "Interpreted",
+        "variant": "summary",
+        "source": summary_sources[0] if summary_sources else None,
+        "sources": summary_sources,
+    }]
+
+    for key, label in INSIGHT_LABELS:
+        insight = output.get(key) or {}
+        sources = _sources_for_refs(
+            [{"source_id": insight.get("source_id"), "page": insight.get("page")}]
+            if insight.get("source_id")
+            else [],
+            source_index,
+        )
+        sections.append({
+            "label": label,
+            "text": insight.get("text", "No verified evidence is available in the supplied sources."),
+            "status": str(insight.get("status", "unavailable")).capitalize(),
+            "variant": "insight",
+            "metrics": insight.get("metrics", []),
+            "source": sources[0] if sources else None,
+            "sources": sources,
+        })
+
     for index, claim in enumerate(output["claims"], start=1):
         sections.append(
             {
                 "label": f"Evidence {index}",
                 "text": claim["text"],
                 "status": claim["status"].capitalize(),
+                "variant": "evidence",
                 "source": _source_for_claim(claim, source_index),
+                "sources": [source for source in [_source_for_claim(claim, source_index)] if source],
             }
         )
 
-    sections.extend(
-        [
-            {"label": "Bull case", "text": output["bull_case"], "status": "Interpreted", "source": None},
-            {"label": "Bear case", "text": output["bear_case"], "status": "Interpreted", "source": None},
-        ]
-    )
+    for key, label, tone in (("bull_case", "Bull case", "bull"), ("bear_case", "Bear case", "bear")):
+        case = output.get(key) or {}
+        sources = _sources_for_refs(case.get("sources"), source_index)
+        sections.append({
+            "label": label,
+            "text": case.get("text", "No verified case is available in the supplied sources."),
+            "status": "Interpreted",
+            "variant": "case",
+            "tone": tone,
+            "source": sources[0] if sources else None,
+            "sources": sources,
+        })
+
     if output["missing_evidence"]:
         sections.append(
             {
                 "label": "Missing evidence",
                 "text": "; ".join(output["missing_evidence"]),
                 "status": "Unavailable",
+                "variant": "missing",
                 "source": None,
+                "sources": [],
             }
         )
 
