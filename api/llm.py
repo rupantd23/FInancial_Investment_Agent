@@ -105,7 +105,6 @@ def generate_research(ticker: str, chunks: list[dict[str, Any]]) -> dict[str, An
             response_schema=ResearchOutput,
             temperature=0.2,
             max_output_tokens=2600,
-            thinking_config=types.ThinkingConfig(thinking_budget=0),
         ),
     )
 
