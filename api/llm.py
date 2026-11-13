@@ -42,7 +42,10 @@ If the supplied excerpts do not support a requested fact, put it in
 missing_evidence and use status=unavailable. Never invent financial figures,
 guidance, biographies, or relationships. Financial arithmetic is performed by
 the application, not by you. Every claim must include the source_id and page
-when evidence exists. Interpretations must be labeled interpreted.
+when evidence exists. Interpretations must be labeled interpreted. Return only
+valid JSON matching the supplied schema. Keep the response compact: use at
+most 4 claims, keep each claim under 35 words, keep the summary under 60 words,
+and keep each bull/bear case under 45 words.
 """
 
 
@@ -71,7 +74,9 @@ def build_research_prompt(ticker: str, chunks: list[dict[str, Any]]) -> str:
     return f"""Research ticker: {ticker.upper()}
 
 Produce a compact research brief with a summary, evidence-backed claims,
-missing evidence, and a bull and bear case.
+missing evidence, and a bull and bear case. Return at most 4 claims. Keep every
+field concise so the complete JSON response fits within the output limit. Do
+not include markdown or commentary outside the JSON.
 
 Retrieved primary-source evidence:
 {evidence_text}
@@ -86,25 +91,24 @@ def generate_research(ticker: str, chunks: list[dict[str, Any]]) -> dict[str, An
 
     try:
         from google import genai  # type: ignore
+        from google.genai import types  # type: ignore
     except ImportError as exc:
         raise GeminiNotConfigured("Install google-genai in the backend environment") from exc
 
     client = genai.Client(api_key=api_key)
-    interaction = client.interactions.create(
+    response = client.models.generate_content(
         model=_model_name(),
-        input=build_research_prompt(ticker, chunks),
-        system_instruction=SYSTEM_INSTRUCTION,
-        response_format=[
-            {
-                "type": "text",
-                "mime_type": "application/json",
-                "schema": ResearchOutput.model_json_schema(),
-            }
-        ],
-        generation_config={"temperature": 0.2, "max_output_tokens": 1400},
+        contents=build_research_prompt(ticker, chunks),
+        config=types.GenerateContentConfig(
+            system_instruction=SYSTEM_INSTRUCTION,
+            response_mime_type="application/json",
+            response_schema=ResearchOutput,
+            temperature=0.2,
+            max_output_tokens=2600,
+        ),
     )
 
-    result = ResearchOutput.model_validate_json(interaction.output_text)
+    result = ResearchOutput.model_validate_json(response.text)
     return {
         **result.model_dump(),
         "ticker": ticker.upper(),
