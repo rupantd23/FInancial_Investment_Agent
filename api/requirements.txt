@@ -1,2 +1,5 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
+# Optional ingestion dependencies. The fixture API does not require them to start.
+yfinance==0.2.50
+PyMuPDF==1.25.1
