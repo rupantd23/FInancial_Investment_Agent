@@ -42,6 +42,18 @@ PYTHONPATH=. python seed_supabase.py
 
 The seed command uses the service-role key from `api/.env` only on the backend. It inserts the 15 portfolio companies and never prints credentials.
 
+Create a private Supabase Storage bucket named `source-documents`. Then ingest a public annual report or transcript that you have legitimately downloaded:
+
+```bash
+PYTHONPATH=. python ingest_documents.py \
+  --ticker TCS \
+  --annual-report /absolute/path/tcs-annual-report.pdf \
+  --annual-report-url https://source.example/annual-report.pdf \
+  --provenance verified
+```
+
+After ingestion, `GET /research/TCS` retrieves only annual-report and earnings-call transcript chunks from Supabase and sends those chunks to Gemini. Use `GET /research/TCS?demo=true` only when you intentionally want the synthetic demo response.
+
 ## Repository layout
 
 ```text

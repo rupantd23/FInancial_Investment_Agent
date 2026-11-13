@@ -6,6 +6,8 @@ from typing import Any
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
+from research_service import get_live_research
+
 
 app = FastAPI(title="FINN API", version="0.1.0")
 app.add_middleware(
@@ -201,19 +203,13 @@ def digest(window: str = Query(default="24h")) -> dict[str, Any]:
 
 
 @app.get("/research/{ticker}")
-def research(ticker: str) -> dict[str, Any]:
+def research(ticker: str, demo: bool = Query(default=False)) -> dict[str, Any]:
     normalized = ticker.upper().replace(".NS", "").replace(".BO", "")
-    if normalized in RESEARCH:
+    if demo and normalized in RESEARCH:
         return RESEARCH[normalized]
-    return {
-        "ticker": normalized,
-        "company": None,
-        "available": False,
-        "disclosure": "No annual-report or earnings-call transcript fixture is available for this ticker.",
-        "headline": "Evidence unavailable",
-        "sections": [],
-        "network": [],
-    }
+    live_result = get_live_research(normalized)
+    live_result["network"] = NETWORK.get(normalized, [])
+    return live_result
 
 
 @app.get("/network/matches")
