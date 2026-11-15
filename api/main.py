@@ -3,11 +3,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI, Query
+from fastapi import File, FastAPI, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from research_service import get_live_research
 from news import GNewsNotConfigured, search_news
+from network_service import NetworkContactInput, insert_contacts, list_contacts, match_contacts, parse_csv_bytes
 
 
 app = FastAPI(title="FINN API", version="0.1.0")
@@ -209,8 +210,20 @@ def research(ticker: str, demo: bool = Query(default=False)) -> dict[str, Any]:
     if demo and normalized in RESEARCH:
         return RESEARCH[normalized]
     live_result = get_live_research(normalized)
-    live_result["network"] = NETWORK.get(normalized, [])
+    live_result["network"] = _network_for_ticker(normalized)
     return live_result
+
+
+def _network_for_ticker(normalized: str, query: str | None = None) -> list[dict[str, Any]]:
+    company = next((item for item in PORTFOLIO if item["ticker"] == normalized), None)
+    try:
+        matches = match_contacts(normalized, query, company)
+        if matches:
+            return matches
+    except Exception:
+        # A missing network table must not break the Push or Pull workflows.
+        pass
+    return NETWORK.get(normalized, [])
 
 
 @app.get("/network/matches")
@@ -219,11 +232,46 @@ def network_matches(
     query: str | None = Query(default=None),
 ) -> dict[str, Any]:
     normalized = ticker.upper().replace(".NS", "").replace(".BO", "")
-    matches = NETWORK.get(normalized, [])
-    if query:
-        terms = query.lower().split()
-        matches = [m for m in matches if any(term in (m["reason"] + m["role"]).lower() for term in terms)] or matches
-    return {"ticker": normalized, "query": query, "matches": matches, "provenance": "Synthetic demo fixture"}
+    matches = _network_for_ticker(normalized, query)
+    provenance = "Supabase user network" if matches and any(item.get("source") for item in matches) else "Synthetic demo fixture"
+    return {"ticker": normalized, "query": query, "matches": matches, "provenance": provenance}
+
+
+@app.get("/network/people")
+def network_people() -> dict[str, Any]:
+    try:
+        return {"contacts": list_contacts(), "provenance": "Supabase user network"}
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Network storage is unavailable: {exc}") from exc
+
+
+@app.post("/network/people")
+def create_network_person(contact: NetworkContactInput) -> dict[str, Any]:
+    try:
+        result = insert_contacts([contact], "manual", "Manual contact")
+        return {**result, "provenance": "Supabase user network"}
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Network storage is unavailable: {exc}") from exc
+
+
+@app.post("/network/import/csv/preview")
+async def preview_network_csv(file: UploadFile = File(...)) -> dict[str, Any]:
+    content = await file.read()
+    return {"filename": file.filename, **parse_csv_bytes(content)}
+
+
+@app.post("/network/import/csv")
+async def import_network_csv(file: UploadFile = File(...)) -> dict[str, Any]:
+    content = await file.read()
+    parsed = parse_csv_bytes(content)
+    if not parsed["valid_rows"]:
+        raise HTTPException(status_code=422, detail={"message": "No valid contact rows found.", **parsed})
+    contacts = [NetworkContactInput.model_validate(row) for row in parsed["valid_rows"]]
+    try:
+        result = insert_contacts(contacts, "csv_import", "CSV import")
+        return {"filename": file.filename, "errors": parsed["errors"], **result, "provenance": "Supabase user network"}
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Network storage is unavailable: {exc}") from exc
 
 
 @app.get("/companies")

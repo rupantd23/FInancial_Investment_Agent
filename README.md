@@ -64,6 +64,23 @@ Add `GNEWS_API_KEY` to `api/.env`. The backend exposes `GET /news?ticker=TCS` an
 
 ## Repository layout
 
+## Network contacts
+
+The Network view supports two working ingestion paths:
+
+- **Manual contact:** enter a person, role, company, sector, skills, relationship, and notes.
+- **CSV import:** choose a CSV, review the validation preview, then import the valid rows.
+
+The accepted CSV headers are:
+
+```text
+name,role,company,sector,skills,linkedin_url,relationship,notes
+```
+
+`skills` may be separated with commas, semicolons, or pipes. Imported records are normalized into `network_people`; explainable evidence is stored in `network_evidence`. The backend uses the Supabase service-role key, so keep it in `api/.env` and never expose it to the browser.
+
+The current local prototype uses a nullable tenant for the unauthenticated demo. Set `FINN_TENANT_ID` to an authenticated Supabase user UUID when tenant-aware auth is added. LinkedIn is intentionally not required for the prototype; its first-degree Connections API requires separate LinkedIn approval.
+
 ```text
 web/       Next.js frontend
 api/       FastAPI backend

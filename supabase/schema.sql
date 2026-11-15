@@ -58,13 +58,37 @@ create index if not exists source_documents_company_idx on public.source_documen
 
 create table if not exists public.network_people (
   id uuid primary key default gen_random_uuid(),
-  tenant_id uuid not null references auth.users(id) on delete cascade,
+  tenant_id uuid references auth.users(id) on delete cascade,
   display_name text not null,
+  email text,
   role_title text,
-  provenance text not null check (provenance in ('verified', 'synthetic_demo')),
+  company_name text,
+  sector text,
+  skills text[] not null default '{}',
+  linkedin_url text,
+  relationship text,
+  notes text,
+  provenance text not null check (provenance in ('verified', 'synthetic_demo', 'csv_import', 'manual', 'linkedin')),
   consent_status text not null default 'demo_only',
+  source_label text,
   created_at timestamptz not null default now()
 );
+
+create table if not exists public.network_evidence (
+  id uuid primary key default gen_random_uuid(),
+  person_id uuid not null references public.network_people(id) on delete cascade,
+  company_id uuid references public.companies(id) on delete cascade,
+  evidence_type text not null,
+  detail text not null,
+  source text not null,
+  confidence numeric check (confidence >= 0 and confidence <= 1),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists network_people_company_idx on public.network_people(company_name);
+create index if not exists network_people_sector_idx on public.network_people(sector);
+create index if not exists network_people_skills_idx on public.network_people using gin(skills);
+create index if not exists network_evidence_person_idx on public.network_evidence(person_id);
 
 create table if not exists public.person_employments (
   person_id uuid not null references public.network_people(id) on delete cascade,
@@ -96,6 +120,7 @@ create table if not exists public.analysis_runs (
 
 alter table public.portfolio_companies enable row level security;
 alter table public.network_people enable row level security;
+alter table public.network_evidence enable row level security;
 alter table public.person_employments enable row level security;
 alter table public.person_education enable row level security;
 alter table public.analysis_runs enable row level security;
@@ -104,6 +129,9 @@ create policy "portfolio belongs to current user" on public.portfolio_companies
   for all using (tenant_id = auth.uid()) with check (tenant_id = auth.uid());
 create policy "network belongs to current user" on public.network_people
   for all using (tenant_id = auth.uid()) with check (tenant_id = auth.uid());
+create policy "network evidence belongs to current user" on public.network_evidence
+  for all using (exists (select 1 from public.network_people p where p.id = person_id and (p.tenant_id = auth.uid() or p.tenant_id is null)))
+  with check (exists (select 1 from public.network_people p where p.id = person_id and (p.tenant_id = auth.uid() or p.tenant_id is null)));
 create policy "employment follows person tenant" on public.person_employments
   for all using (exists (select 1 from public.network_people p where p.id = person_id and p.tenant_id = auth.uid()))
   with check (exists (select 1 from public.network_people p where p.id = person_id and p.tenant_id = auth.uid()));

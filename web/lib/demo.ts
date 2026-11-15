@@ -7,11 +7,13 @@ export type Source = {
 };
 
 export type NetworkMatch = {
+  personId?: string;
   name: string;
   role: string;
   score: number;
   reason: string;
   evidence: string;
+  source?: string;
   caveat: string;
 };
 
