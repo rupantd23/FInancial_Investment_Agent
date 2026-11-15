@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import os
 from typing import Any
+from urllib.parse import urlencode
 
 from fastapi import File, FastAPI, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 
 from research_service import get_live_research
 from news import GNewsNotConfigured, search_news
 from network_service import NetworkContactInput, insert_contacts, list_contacts, match_contacts, parse_csv_bytes
+from linkedin_service import LinkedInNotConfigured, LinkedInRequestFailed, authorization_url, consume_oauth_state, create_oauth_state, import_connections
 
 
 app = FastAPI(title="FINN API", version="0.1.0")
@@ -235,6 +239,46 @@ def network_matches(
     matches = _network_for_ticker(normalized, query)
     provenance = "Supabase user network" if matches and any(item.get("source") for item in matches) else "Synthetic demo fixture"
     return {"ticker": normalized, "query": query, "matches": matches, "provenance": provenance}
+
+
+def _linkedin_frontend_redirect(status: str, message: str) -> RedirectResponse:
+    frontend = os.getenv("LINKEDIN_FRONTEND_URL", "http://localhost:3000").rstrip("/")
+    query = urlencode({"linkedin": status, "message": message[:240]})
+    return RedirectResponse(f"{frontend}/?{query}")
+
+
+@app.get("/auth/linkedin/start")
+def linkedin_start() -> RedirectResponse:
+    try:
+        state = create_oauth_state()
+        return RedirectResponse(authorization_url(state))
+    except LinkedInNotConfigured as exc:
+        return _linkedin_frontend_redirect("error", str(exc))
+
+
+@app.get("/auth/linkedin/callback")
+def linkedin_callback(
+    code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+    error_description: str | None = Query(default=None),
+) -> RedirectResponse:
+    if not state or not consume_oauth_state(state):
+        return _linkedin_frontend_redirect("error", "LinkedIn authorization state expired. Please try again.")
+    if error:
+        return _linkedin_frontend_redirect("error", error_description or error)
+    if not code:
+        return _linkedin_frontend_redirect("error", "LinkedIn did not return an authorization code.")
+    try:
+        from linkedin_service import exchange_code
+
+        access_token = exchange_code(code)
+        result = import_connections(access_token)
+        return _linkedin_frontend_redirect("connected", f"Imported {result['inserted']} LinkedIn contacts; {len(result['duplicates'])} duplicates skipped.")
+    except (LinkedInNotConfigured, LinkedInRequestFailed) as exc:
+        return _linkedin_frontend_redirect("error", str(exc))
+    except Exception:
+        return _linkedin_frontend_redirect("error", "LinkedIn import failed. Check the backend logs and LinkedIn app permissions.")
 
 
 @app.get("/network/people")

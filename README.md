@@ -81,6 +81,20 @@ name,role,company,sector,skills,linkedin_url,relationship,notes
 
 The current local prototype uses a nullable tenant for the unauthenticated demo. Set `FINN_TENANT_ID` to an authenticated Supabase user UUID when tenant-aware auth is added. LinkedIn is intentionally not required for the prototype; its first-degree Connections API requires separate LinkedIn approval.
 
+### Optional LinkedIn import
+
+The Network page includes an OAuth entry point, but first-degree import is disabled by default. To enable it after LinkedIn approves the required permission, add these values to `api/.env`:
+
+```env
+LINKEDIN_CLIENT_ID=your-client-id
+LINKEDIN_CLIENT_SECRET=your-client-secret
+LINKEDIN_REDIRECT_URI=http://localhost:8000/auth/linkedin/callback
+LINKEDIN_FRONTEND_URL=http://localhost:3000
+LINKEDIN_CONNECTIONS_ENABLED=true
+```
+
+Register the exact redirect URL in the LinkedIn Developer Portal. The backend completes the OAuth code exchange, requests the authenticated member's first-degree connections, normalizes returned names into `network_people`, and discards the access token after import. The app does not scrape LinkedIn or request second-degree connections.
+
 ```text
 web/       Next.js frontend
 api/       FastAPI backend
