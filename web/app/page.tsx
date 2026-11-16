@@ -113,10 +113,10 @@ type ThemePreference = "light" | "dark" | "system";
 const navItems = [
   { id: "today", label: "Today", icon: "◒" },
   { id: "market", label: "Market", icon: "⌁" },
-  { id: "ask", label: "Ask FINN", icon: "✦" },
   { id: "research", label: "Research", icon: "⌕" },
   { id: "network", label: "Network", icon: "⌁" },
   { id: "news", label: "News", icon: "◇" },
+  { id: "ask", label: "Ask FINN", icon: "✦" },
 ];
 
 export default function Home() {
@@ -191,6 +191,7 @@ export default function Home() {
         return;
       }
       setUserEmail(session.user.email ?? "Analyst");
+      setActive("today");
       setAuthReady(true);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -198,6 +199,7 @@ export default function Home() {
         window.location.replace("/login");
       } else {
         setUserEmail(session.user.email ?? "Analyst");
+        setActive("today");
         setAuthReady(true);
       }
     });
