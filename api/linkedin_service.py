@@ -17,7 +17,7 @@ AUTHORIZATION_URL = "https://www.linkedin.com/oauth/v2/authorization"
 TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
 USERINFO_URL = "https://api.linkedin.com/v2/userinfo"
 CONNECTIONS_URL = "https://api.linkedin.com/v2/connections"
-_pending_states: dict[str, float] = {}
+_pending_states: dict[str, tuple[float, str | None]] = {}
 
 
 class LinkedInNotConfigured(RuntimeError):
@@ -46,17 +46,24 @@ def _scopes() -> str:
     return " ".join(scopes)
 
 
-def create_oauth_state() -> str:
+def create_oauth_state(user_id: str | None = None) -> str:
     now = time.time()
-    _pending_states.update({key: created for key, created in list(_pending_states.items()) if now - created < 600})
+    _pending_states.update({key: value for key, value in list(_pending_states.items()) if now - value[0] < 600})
     state = secrets.token_urlsafe(32)
-    _pending_states[state] = now
+    _pending_states[state] = (now, user_id)
     return state
 
 
 def consume_oauth_state(state: str) -> bool:
-    created = _pending_states.pop(state, None)
-    return bool(created and time.time() - created < 600)
+    value = _pending_states.pop(state, None)
+    return bool(value and time.time() - value[0] < 600)
+
+
+def consume_oauth_context(state: str) -> str | None:
+    value = _pending_states.pop(state, None)
+    if not value or time.time() - value[0] >= 600:
+        return None
+    return value[1]
 
 
 def authorization_url(state: str) -> str:
@@ -143,9 +150,9 @@ def fetch_connections(access_token: str) -> list[NetworkContactInput]:
     return contacts
 
 
-def import_connections(access_token: str) -> dict[str, Any]:
+def import_connections(access_token: str, user_id: str | None = None) -> dict[str, Any]:
     # Fetching userinfo validates the member token before importing connections.
     fetch_userinfo(access_token)
     contacts = fetch_connections(access_token)
-    result = insert_contacts(contacts, "linkedin", "LinkedIn first-degree connection") if contacts else {"inserted": 0, "duplicates": [], "contacts": []}
+    result = insert_contacts(contacts, "linkedin", "LinkedIn first-degree connection", user_id) if contacts else {"inserted": 0, "duplicates": [], "contacts": []}
     return {"fetched": len(contacts), **result}

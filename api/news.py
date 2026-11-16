@@ -4,15 +4,20 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import requests
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().with_name(".env"))
 
 
 class GNewsNotConfigured(RuntimeError):
+    pass
+
+
+class GNewsRequestFailed(RuntimeError):
     pass
 
 
@@ -64,14 +69,19 @@ def search_news(
     if to_date:
         params["to"] = to_date.isoformat()
 
-    response = requests.get(
-        "https://gnews.io/api/v4/search",
-        params=params,
-        headers={"X-Api-Key": api_key},
-        timeout=15,
-    )
-    response.raise_for_status()
-    payload = response.json()
+    try:
+        response = requests.get(
+            "https://gnews.io/api/v4/search",
+            params=params,
+            headers={"X-Api-Key": api_key},
+            timeout=15,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except requests.RequestException as exc:
+        raise GNewsRequestFailed("GNews could not be reached. Check the backend network connection.") from exc
+    except ValueError as exc:
+        raise GNewsRequestFailed("GNews returned an invalid response.") from exc
     return {
         "query": query,
         "totalArticles": payload.get("totalArticles", 0),

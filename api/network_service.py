@@ -28,9 +28,9 @@ class NetworkContactInput(BaseModel):
     notes: str | None = None
 
 
-def _tenant_id() -> str | None:
-    """Use a configured tenant when auth exists; null is the local demo tenant."""
-    return os.getenv("FINN_TENANT_ID") or None
+def _tenant_id(user_id: str | None = None) -> str | None:
+    """Use the authenticated user; retain the env fallback for local demo scripts."""
+    return user_id or os.getenv("FINN_TENANT_ID") or None
 
 
 def _clean(value: Any) -> str | None:
@@ -105,23 +105,23 @@ def parse_csv_bytes(content: bytes) -> dict[str, Any]:
     return {"row_count": row_count, "valid_rows": valid_rows, "errors": errors}
 
 
-def _scope_query(client: Any) -> Any:
+def _scope_query(client: Any, user_id: str | None = None) -> Any:
     query = client.table("network_people").select(
         "id,display_name,email,role_title,company_name,sector,skills,linkedin_url,relationship,notes,provenance,source_label,created_at"
     )
-    tenant_id = _tenant_id()
+    tenant_id = _tenant_id(user_id)
     return query.eq("tenant_id", tenant_id) if tenant_id else query.is_("tenant_id", "null")
 
 
-def list_contacts() -> list[dict[str, Any]]:
+def list_contacts(user_id: str | None = None) -> list[dict[str, Any]]:
     client = get_supabase_client(admin=True)
-    response = _scope_query(client).order("created_at", desc=True).execute()
+    response = _scope_query(client, user_id).order("created_at", desc=True).execute()
     return response.data or []
 
 
-def _contact_row(contact: NetworkContactInput, provenance: str, source_label: str) -> dict[str, Any]:
+def _contact_row(contact: NetworkContactInput, provenance: str, source_label: str, user_id: str | None = None) -> dict[str, Any]:
     return {
-        "tenant_id": _tenant_id(),
+        "tenant_id": _tenant_id(user_id),
         "display_name": contact.name.strip(),
         "email": contact.email,
         "role_title": contact.role,
@@ -156,9 +156,9 @@ def _insert_evidence(client: Any, person_id: str, contact: NetworkContactInput, 
         client.table("network_evidence").insert(evidence).execute()
 
 
-def insert_contacts(contacts: list[NetworkContactInput], provenance: str, source_label: str) -> dict[str, Any]:
+def insert_contacts(contacts: list[NetworkContactInput], provenance: str, source_label: str, user_id: str | None = None) -> dict[str, Any]:
     client = get_supabase_client(admin=True)
-    existing = list_contacts()
+    existing = list_contacts(user_id)
     existing_keys = {_duplicate_key(row) for row in existing}
     inserted: list[dict[str, Any]] = []
     duplicates: list[str] = []
@@ -168,7 +168,7 @@ def insert_contacts(contacts: list[NetworkContactInput], provenance: str, source
         if key in existing_keys:
             duplicates.append(contact.name)
             continue
-        response = client.table("network_people").insert(_contact_row(contact, provenance, source_label)).execute()
+        response = client.table("network_people").insert(_contact_row(contact, provenance, source_label, user_id)).execute()
         row = (response.data or [None])[0]
         if row:
             inserted.append(row)
@@ -184,8 +184,14 @@ def _company_context(ticker: str, company: dict[str, Any] | None) -> tuple[str, 
     return ticker, ""
 
 
-def match_contacts(ticker: str, query: str | None, company: dict[str, Any] | None) -> list[dict[str, Any]]:
-    people = list_contacts()
+def match_contacts(
+    ticker: str,
+    query: str | None,
+    company: dict[str, Any] | None,
+    user_id: str | None = None,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    people = list_contacts(user_id)
     company_name, sector = _company_context(ticker, company)
     company_tokens = _tokens(f"{ticker} {company_name}")
     sector_tokens = _tokens(sector)
@@ -208,7 +214,7 @@ def match_contacts(ticker: str, query: str | None, company: dict[str, Any] | Non
         query_overlap = query_tokens.intersection(profile_tokens)
         relationship = bool(person.get("relationship"))
         score = (45 if company_overlap else 0) + (25 if sector_overlap else 0) + (25 if query_overlap else 0) + (5 if relationship else 0)
-        if score == 0:
+        if score < 50:
             continue
 
         reasons: list[str] = []
@@ -242,4 +248,4 @@ def match_contacts(ticker: str, query: str | None, company: dict[str, Any] | Non
             "caveat": caveat,
         })
 
-    return sorted(matches, key=lambda match: match["score"], reverse=True)[:10]
+    return sorted(matches, key=lambda match: match["score"], reverse=True)[:limit]

@@ -29,6 +29,18 @@ create table if not exists public.market_daily (
   primary key (company_id, trading_date)
 );
 
+create table if not exists public.alert_preferences (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  enabled boolean not null default true,
+  price_rise_threshold numeric not null default 5 check (price_rise_threshold >= 0.5 and price_rise_threshold <= 50),
+  price_fall_threshold numeric not null default 5 check (price_fall_threshold >= 0.5 and price_fall_threshold <= 50),
+  volume_multiplier numeric not null default 2 check (volume_multiplier >= 1 and volume_multiplier <= 20),
+  material_filings text[] not null default '{results,m&a,fund_raise,management,legal_regulatory,earnings_call}',
+  watched_scope text not null default 'portfolio' check (watched_scope in ('portfolio', 'selected')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.source_documents (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid references auth.users(id) on delete cascade,
@@ -88,6 +100,7 @@ create table if not exists public.network_evidence (
 create index if not exists network_people_company_idx on public.network_people(company_name);
 create index if not exists network_people_sector_idx on public.network_people(sector);
 create index if not exists network_people_skills_idx on public.network_people using gin(skills);
+create index if not exists network_people_tenant_idx on public.network_people(tenant_id);
 create index if not exists network_evidence_person_idx on public.network_evidence(person_id);
 
 create table if not exists public.person_employments (
@@ -119,6 +132,7 @@ create table if not exists public.analysis_runs (
 );
 
 alter table public.portfolio_companies enable row level security;
+alter table public.alert_preferences enable row level security;
 alter table public.network_people enable row level security;
 alter table public.network_evidence enable row level security;
 alter table public.person_employments enable row level security;
@@ -127,11 +141,18 @@ alter table public.analysis_runs enable row level security;
 
 create policy "portfolio belongs to current user" on public.portfolio_companies
   for all using (tenant_id = auth.uid()) with check (tenant_id = auth.uid());
+create policy "alert preferences belong to current user" on public.alert_preferences
+  for all to authenticated
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
 create policy "network belongs to current user" on public.network_people
-  for all using (tenant_id = auth.uid()) with check (tenant_id = auth.uid());
+  for all to authenticated
+  using ((select auth.uid()) = tenant_id)
+  with check ((select auth.uid()) = tenant_id);
 create policy "network evidence belongs to current user" on public.network_evidence
-  for all using (exists (select 1 from public.network_people p where p.id = person_id and (p.tenant_id = auth.uid() or p.tenant_id is null)))
-  with check (exists (select 1 from public.network_people p where p.id = person_id and (p.tenant_id = auth.uid() or p.tenant_id is null)));
+  for all to authenticated
+  using (exists (select 1 from public.network_people p where p.id = person_id and p.tenant_id = (select auth.uid())))
+  with check (exists (select 1 from public.network_people p where p.id = person_id and p.tenant_id = (select auth.uid())));
 create policy "employment follows person tenant" on public.person_employments
   for all using (exists (select 1 from public.network_people p where p.id = person_id and p.tenant_id = auth.uid()))
   with check (exists (select 1 from public.network_people p where p.id = person_id and p.tenant_id = auth.uid()));

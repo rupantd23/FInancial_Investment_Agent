@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().with_name(".env"))
 
 
 class SupabaseNotConfigured(RuntimeError):
@@ -22,7 +23,10 @@ def get_supabase_client(*, admin: bool = False) -> Any:
         raise SupabaseNotConfigured("Install the supabase Python client") from exc
 
     url = os.getenv("SUPABASE_URL")
-    key_name = "SUPABASE_SERVICE_ROLE_KEY" if admin else "SUPABASE_ANON_KEY"
+    if admin:
+        key_name = "SUPABASE_SECRET_KEY" if os.getenv("SUPABASE_SECRET_KEY") else "SUPABASE_SERVICE_ROLE_KEY"
+    else:
+        key_name = "SUPABASE_PUBLISHABLE_KEY" if os.getenv("SUPABASE_PUBLISHABLE_KEY") else "SUPABASE_ANON_KEY"
     key = os.getenv(key_name)
     if not url or not key:
         raise SupabaseNotConfigured(f"{key_name} and SUPABASE_URL must be set")

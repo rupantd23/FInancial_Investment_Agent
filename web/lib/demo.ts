@@ -31,6 +31,30 @@ export type AlertItem = {
   network: NetworkMatch[];
 };
 
+export type PortfolioCompany = {
+  ticker: string;
+  name: string;
+  sector: string;
+};
+
+export const portfolioCompanies: PortfolioCompany[] = [
+  { ticker: "RELIANCE", name: "Reliance Industries", sector: "Energy & Digital" },
+  { ticker: "TCS", name: "Tata Consultancy Services", sector: "Technology" },
+  { ticker: "INFY", name: "Infosys", sector: "Technology" },
+  { ticker: "HDFCBANK", name: "HDFC Bank", sector: "Financials" },
+  { ticker: "ICICIBANK", name: "ICICI Bank", sector: "Financials" },
+  { ticker: "SBIN", name: "State Bank of India", sector: "Financials" },
+  { ticker: "ITC", name: "ITC", sector: "Consumer" },
+  { ticker: "HINDUNILVR", name: "Hindustan Unilever", sector: "Consumer" },
+  { ticker: "LT", name: "Larsen & Toubro", sector: "Industrials" },
+  { ticker: "MARUTI", name: "Maruti Suzuki India", sector: "Auto" },
+  { ticker: "SUNPHARMA", name: "Sun Pharmaceutical", sector: "Healthcare" },
+  { ticker: "ASIANPAINT", name: "Asian Paints", sector: "Consumer" },
+  { ticker: "WIPRO", name: "Wipro", sector: "Technology" },
+  { ticker: "AXISBANK", name: "Axis Bank", sector: "Financials" },
+  { ticker: "BHARTIARTL", name: "Bharti Airtel", sector: "Telecom" },
+];
+
 export const fallbackDigest = {
   window: "24h",
   generatedAt: new Date().toISOString(),

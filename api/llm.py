@@ -7,9 +7,14 @@ It deliberately does not fetch web content or calculate financial metrics.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+
+
+load_dotenv(Path(__file__).resolve().with_name(".env"))
 
 
 ALLOWED_SOURCE_TYPES = {"annual_report", "earnings_call_transcript"}
@@ -17,6 +22,10 @@ ALLOWED_SOURCE_TYPES = {"annual_report", "earnings_call_transcript"}
 
 class GeminiNotConfigured(RuntimeError):
     pass
+
+
+class GeminiTemporarilyUnavailable(RuntimeError):
+    """A retryable provider-side capacity/availability response."""
 
 
 class ResearchClaim(BaseModel):
@@ -66,6 +75,12 @@ class ResearchOutput(BaseModel):
     bear_case: ResearchCase
 
 
+class ChatOutput(BaseModel):
+    answer: str
+    sources: list[ResearchSourceRef] = Field(default_factory=list)
+    caveat: str = ""
+
+
 SYSTEM_INSTRUCTION = """You are FINN's evidence-grounded public-markets research assistant.
 
 Use only the supplied annual-report and earnings-call transcript excerpts.
@@ -80,6 +95,16 @@ wording and units. Interpretations must be labeled interpreted. Return only vali
 JSON matching the supplied schema. Keep the response compact: use at most 4
 claims, keep each claim under 35 words, keep each insight under 45 words, keep
 the summary under 60 words, and keep each bull/bear case under 45 words.
+"""
+
+CHAT_SYSTEM_INSTRUCTION = """You are Ask FINN, an evidence-grounded public-markets assistant.
+
+Use only the supplied annual-report and earnings-call transcript excerpts. Do not use
+general knowledge, news, broker notes, or unstated assumptions. If the evidence does
+not answer the question, say so plainly and explain what source would be needed. Never
+invent financial figures, guidance, events, or relationships. Cite every supported
+statement with source_id and page when evidence exists. Keep the answer under 180
+words and return only valid JSON matching the supplied schema.
 """
 
 
@@ -136,17 +161,26 @@ def generate_research(ticker: str, chunks: list[dict[str, Any]]) -> dict[str, An
         raise GeminiNotConfigured("Install google-genai in the backend environment") from exc
 
     client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model=_model_name(),
-        contents=build_research_prompt(ticker, chunks),
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_INSTRUCTION,
-            response_mime_type="application/json",
-            response_schema=ResearchOutput,
-            temperature=0.2,
-            max_output_tokens=2600,
-        ),
-    )
+    try:
+        response = client.models.generate_content(
+            model=_model_name(),
+            contents=build_research_prompt(ticker, chunks),
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_INSTRUCTION,
+                response_mime_type="application/json",
+                response_schema=ResearchOutput,
+                temperature=0.2,
+                max_output_tokens=2600,
+            ),
+        )
+    except Exception as exc:
+        status_code = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+        error_text = str(exc).lower()
+        if status_code == 503 or "high demand" in error_text or "temporarily unavailable" in error_text:
+            raise GeminiTemporarilyUnavailable(
+                "Gemini is temporarily experiencing high demand. Please wait 10–15 seconds and try again."
+            ) from exc
+        raise
 
     result = ResearchOutput.model_validate_json(response.text)
     return {
@@ -155,3 +189,62 @@ def generate_research(ticker: str, chunks: list[dict[str, Any]]) -> dict[str, An
         "model": _model_name(),
         "provenance": "Gemini interpretation of supplied primary-source chunks",
     }
+
+
+def build_chat_prompt(question: str, chunks: list[dict[str, Any]], ticker: str | None = None) -> str:
+    permitted = [
+        chunk for chunk in chunks
+        if chunk.get("source_type") in ALLOWED_SOURCE_TYPES and chunk.get("content")
+    ]
+    evidence = []
+    for index, chunk in enumerate(permitted, start=1):
+        source_id = str(chunk.get("source_id", f"chunk-{index}"))
+        page = chunk.get("page_number", "unknown")
+        evidence.append(f"[source_id={source_id} type={chunk['source_type']} page={page}]\n{chunk['content']}")
+    evidence_text = "\n\n".join(evidence) or "NO PERMITTED EVIDENCE WAS RETRIEVED."
+    scope = f"Company/ticker: {ticker.upper()}" if ticker else "Scope: supplied portfolio evidence"
+    return f"""{scope}
+Question: {question}
+
+Answer using only the retrieved primary-source evidence. Return concise JSON with an answer,
+source references, and a short caveat when evidence is incomplete.
+
+Retrieved evidence:
+{evidence_text}
+"""
+
+
+def generate_chat(question: str, chunks: list[dict[str, Any]], ticker: str | None = None) -> dict[str, Any]:
+    """Answer a user question from retrieved primary-source chunks only."""
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise GeminiNotConfigured("GEMINI_API_KEY is not set")
+    try:
+        from google import genai  # type: ignore
+        from google.genai import types  # type: ignore
+    except ImportError as exc:
+        raise GeminiNotConfigured("Install google-genai in the backend environment") from exc
+
+    client = genai.Client(api_key=api_key)
+    try:
+        response = client.models.generate_content(
+            model=_model_name(),
+            contents=build_chat_prompt(question, chunks, ticker),
+            config=types.GenerateContentConfig(
+                system_instruction=CHAT_SYSTEM_INSTRUCTION,
+                response_mime_type="application/json",
+                response_schema=ChatOutput,
+                temperature=0.2,
+                max_output_tokens=900,
+            ),
+        )
+    except Exception as exc:
+        status_code = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+        error_text = str(exc).lower()
+        if status_code == 503 or "high demand" in error_text or "temporarily unavailable" in error_text:
+            raise GeminiTemporarilyUnavailable(
+                "Gemini is temporarily experiencing high demand. Please wait 10–15 seconds and try again."
+            ) from exc
+        raise
+    result = ChatOutput.model_validate_json(response.text)
+    return {**result.model_dump(), "model": _model_name(), "provenance": "Gemini interpretation of supplied primary-source chunks"}
