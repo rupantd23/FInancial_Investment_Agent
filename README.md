@@ -2,6 +2,8 @@
 
 Financial Investment Agent - a mobile-first investor intelligence prototype.
 
+## Vidoe Demo Link: https://drive.google.com/file/d/1AVEyy5tvWXEJcnYiwfVHr1yoFWsxk-ja/view?usp=sharing
+
 ## Prototype scope
 
 - **Push:** a prioritized portfolio digest with source-backed announcements and market signals.
