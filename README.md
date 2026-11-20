@@ -2,7 +2,8 @@
 
 Financial Investment Agent - a mobile-first investor intelligence prototype.
 
-## Vidoe Demo Link: https://drive.google.com/file/d/1AVEyy5tvWXEJcnYiwfVHr1yoFWsxk-ja/view?usp=sharing
+#### Video Demo Link: https://drive.google.com/file/d/1AVEyy5tvWXEJcnYiwfVHr1yoFWsxk-ja/view?usp=sharing  
+#### Application Website:- https://f-inancial-investment-agent-iz1j.vercel.app/
 
 ## Prototype scope
 
